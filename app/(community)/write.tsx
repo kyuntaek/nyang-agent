@@ -63,7 +63,7 @@ function optionalVideoUrlError(raw: string): string | null {
 
 function CommunityWriteScreenInner() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ editPostId?: string | string[] }>();
+  const params = useLocalSearchParams<{ editPostId?: string | string[]; channel?: string | string[] }>();
   const editPostId = firstParam(params.editPostId);
   const isEdit = Boolean(editPostId);
   const insets = useSafeAreaInsets();
@@ -74,6 +74,8 @@ function CommunityWriteScreenInner() {
   const [videoUrl, setVideoUrl] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** 연속 탭으로 insert/update가 여러 번 나가지 않도록, 첫 await 이전에 동기적으로 막음 */
+  const saveInFlightRef = useRef(false);
   const bodyInputRef = useRef<TextInput>(null);
   const videoInputRef = useRef<TextInput>(null);
   const setFocusedField = useSmartKeyboardFieldFocus();
@@ -106,6 +108,15 @@ function CommunityWriteScreenInner() {
     const label = COMMUNITY_WRITE_CHANNELS.find((c) => c.db === p.channel)?.label;
     setChannelLabel(label ?? COMMUNITY_WRITE_CHANNELS[0].label);
   }, [isEdit, editPostId, existingPostQuery.data]);
+
+  /** 커뮤니티 탭에서 넘긴 `channel`(db) → 글쓰기 채널 칩 (신규 글만) */
+  useEffect(() => {
+    if (isEdit) return;
+    const ch = firstParam(params.channel);
+    if (!ch) return;
+    const row = COMMUNITY_WRITE_CHANNELS.find((c) => c.db === ch);
+    if (row) setChannelLabel(row.label);
+  }, [isEdit, params.channel]);
 
   useEffect(() => {
     const post = existingPostQuery.data;
@@ -208,39 +219,42 @@ function CommunityWriteScreenInner() {
   }, []);
 
   const save = useCallback(async () => {
+    if (saveInFlightRef.current) return;
+
     const trimmed = body.trim();
     if (!trimmed) {
       Alert.alert('내용을 입력해 주세요', '본문이 비어 있어요.');
       return;
     }
 
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
-    if (userErr) {
-      console.log('[community write] getUser error (full)', userErr);
-      Alert.alert('로그인', userErr.message);
-      return;
-    }
-    const uid = userData.user?.id;
-    if (!uid) {
-      Alert.alert('로그인', '다시 로그인한 뒤 시도해 주세요.');
-      return;
-    }
-
-    const catId = cat?.id ?? null;
-    if (!isEdit && !catId) {
-      Alert.alert('냥이 정보 필요', '냥이 프로필을 먼저 등록한 뒤 글을 쓸 수 있어요.');
-      return;
-    }
-
-    const vUrl = videoUrl.trim();
-    const videoErr = optionalVideoUrlError(videoUrl);
-    if (videoErr) {
-      Alert.alert('동영상 링크', videoErr);
-      return;
-    }
-
+    saveInFlightRef.current = true;
     setSaving(true);
     try {
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr) {
+        console.log('[community write] getUser error (full)', userErr);
+        Alert.alert('로그인', userErr.message);
+        return;
+      }
+      const uid = userData.user?.id;
+      if (!uid) {
+        Alert.alert('로그인', '다시 로그인한 뒤 시도해 주세요.');
+        return;
+      }
+
+      const catId = cat?.id ?? null;
+      if (!isEdit && !catId) {
+        Alert.alert('냥이 정보 필요', '냥이 프로필을 먼저 등록한 뒤 글을 쓸 수 있어요.');
+        return;
+      }
+
+      const vUrl = videoUrl.trim();
+      const videoErr = optionalVideoUrlError(videoUrl);
+      if (videoErr) {
+        Alert.alert('동영상 링크', videoErr);
+        return;
+      }
+
       if (isEdit && editPostId) {
         await updatePost(editPostId, {
           channel: channelDb,
@@ -292,6 +306,7 @@ function CommunityWriteScreenInner() {
     } catch (e) {
       Alert.alert('저장 실패', e instanceof Error ? e.message : '처리하지 못했어요.');
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   }, [body, cat?.id, channelDb, editPostId, imageUrls, isEdit, queryClient, router, videoUrl]);

@@ -9,10 +9,12 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { ZoomableImage } from './ZoomableImage';
+import { GestureHandlerRootView, TouchableOpacity as GHTouchableOpacity } from 'react-native-gesture-handler';
 
 const { width: WIN_W, height: WIN_H } = Dimensions.get('window');
+const ZOOM_IMG_W = WIN_W * 0.98;
+const ZOOM_IMG_H = Math.min(WIN_W * 0.98, WIN_H * 0.85);
 
 type Props = {
   uri: string | null;
@@ -26,7 +28,7 @@ type Props = {
 };
 
 /**
- * 게시글 이미지 풀스크린: iOS·Android 모두 Reanimated 핀치만 사용
+ * 게시글 이미지 풀스크린: Reanimated 핀치 줌 + 확대 시 한 손가락 팬
  * (ScrollView 네이티브 줌은 닫았다 다시 열 때 오프셋·배율이 남는 이슈가 있음)
  */
 export function ImageZoomModal({
@@ -38,15 +40,11 @@ export function ImageZoomModal({
   nyanBtiChip,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const scale = useSharedValue(1);
-  const startScale = useSharedValue(1);
-  /** 열릴 때마다 올려 Modal·제스처 트리를 통째로 리마운트 */
+  /** 열릴 때마다 올려 Modal·줌 상태를 리마운트 */
   const [mountKey, setMountKey] = useState(0);
 
   useLayoutEffect(() => {
     if (!uri) return;
-    scale.value = 1;
-    startScale.value = 1;
     setMountKey((k) => k + 1);
   }, [uri]);
 
@@ -55,28 +53,6 @@ export function ImageZoomModal({
   const cat = typeof catName === 'string' ? catName.trim() : '';
   const bti = typeof nyanBtiChip === 'string' ? nyanBtiChip.trim() : '';
   const showMeta = author.length > 0 || cat.length > 0 || bti.length > 0;
-
-  const pinch = Gesture.Pinch()
-    .onStart(() => {
-      startScale.value = scale.value;
-    })
-    .onUpdate((e) => {
-      const next = startScale.value * e.scale;
-      const clamped = Math.min(5, Math.max(1, next));
-      scale.value = clamped;
-    })
-    .onEnd(() => {
-      if (scale.value < 1.05) {
-        scale.value = withTiming(1);
-        startScale.value = 1;
-      } else {
-        startScale.value = scale.value;
-      }
-    });
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
 
   if (!uri) return null;
 
@@ -122,13 +98,9 @@ export function ImageZoomModal({
           </View>
         ) : null}
         <View style={styles.center} pointerEvents="box-none">
-          <GestureDetector key={`pinch-${mountKey}`} gesture={pinch}>
-            <Animated.Image
-              source={{ uri }}
-              style={[styles.zoomImage, animatedStyle]}
-              resizeMode="contain"
-            />
-          </GestureDetector>
+          <View key={`zoom-${mountKey}`} style={styles.zoomViewport} pointerEvents="box-none">
+            <ZoomableImage uri={uri} style={{ width: ZOOM_IMG_W, height: ZOOM_IMG_H }} resizeMode="contain" />
+          </View>
         </View>
         {cap.length > 0 ? (
           <View
@@ -147,9 +119,14 @@ export function ImageZoomModal({
             </ScrollView>
           </View>
         ) : null}
-        <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12} activeOpacity={0.85}>
+        <GHTouchableOpacity
+          onPress={onClose}
+          style={[styles.closeBtn, { top: Math.max(insets.top + 8, 48) }]}
+          hitSlop={12}
+          activeOpacity={0.85}
+        >
           <Text style={styles.closeText}>닫기</Text>
-        </TouchableOpacity>
+        </GHTouchableOpacity>
       </GestureHandlerRootView>
     </Modal>
   );
@@ -166,15 +143,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  zoomImage: {
-    width: WIN_W * 0.98,
-    height: WIN_W * 0.98,
-    maxHeight: WIN_H * 0.85,
+  zoomViewport: {
+    width: ZOOM_IMG_W,
+    height: ZOOM_IMG_H,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   closeBtn: {
     position: 'absolute',
-    top: 48,
     right: 16,
+    zIndex: 100,
+    elevation: 100,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,

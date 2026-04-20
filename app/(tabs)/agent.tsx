@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { markAgentScreenVisited } from '../../lib/agent-home-ui-flag';
 import { supabase } from '../../lib/supabase';
 
 const PRIMARY = '#7F77DD';
@@ -160,6 +161,12 @@ function AgentScreenInner() {
   const router = useRouter();
   const params = useLocalSearchParams<{ quick?: string | string[] }>();
   const quickParam = firstParam(params.quick);
+
+  useFocusEffect(
+    useCallback(() => {
+      markAgentScreenVisited();
+    }, [])
+  );
 
   const [cat, setCat] = useState<CatRow | null>(null);
   const [catLoading, setCatLoading] = useState(true);
@@ -368,22 +375,6 @@ function AgentScreenInner() {
               className="border-t border-violet-200 bg-violet-100 px-4 pt-2"
               style={{ paddingBottom: Math.max(insets.bottom, 8) }}
             >
-              <View className="mb-2 flex-row flex-wrap gap-2">
-                {QUICK_CHIPS.map((c) => (
-                  <TouchableOpacity
-                    key={c.key}
-                    onPress={() => void sendToAgent(c.label)}
-                    disabled={sending}
-                    activeOpacity={0.85}
-                    className={`rounded-full border-2 border-violet-300 bg-violet-50 px-3 py-2 ${
-                      sending ? 'opacity-45' : ''
-                    }`}
-                  >
-                    <Text className="text-sm font-semibold text-violet-950">{c.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
               <View className="flex-row items-end gap-2">
                 <TextInput
                   ref={inputRef}

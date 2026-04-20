@@ -622,6 +622,14 @@ export async function deletePost(postId: string): Promise<void> {
   if (!postId) throw new Error('글 정보가 없어요.');
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user?.id) throw new Error('로그인이 필요해요.');
-  const { error } = await supabase.from('posts').delete().eq('id', postId).eq('user_id', userData.user.id);
+  const { data, error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', postId)
+    .eq('user_id', userData.user.id)
+    .select('id');
   if (error) throw new Error(error.message || '글을 삭제하지 못했어요.');
+  if (!data?.length) {
+    throw new Error('글을 삭제하지 못했어요. 본인 글이 아니거나 이미 삭제됐을 수 있어요.');
+  }
 }

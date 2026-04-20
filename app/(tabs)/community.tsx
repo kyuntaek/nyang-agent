@@ -419,7 +419,10 @@ function CommunityScreenInner() {
       />
 
       <TouchableOpacity
-        onPress={() => router.push('/write')}
+        onPress={() => {
+          const ch = channelDb ?? 'daily';
+          router.push({ pathname: '/write', params: { channel: ch } });
+        }}
         accessibilityLabel="글쓰기"
         activeOpacity={0.88}
         style={{

@@ -12,9 +12,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { clamp, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ZoomableImage } from '../ZoomableImage';
 import { fetchCatPhotos, type CatPhotoRow } from '../../lib/cat-life-queries';
 import { processPickedImageForUpload, thumbnailPublicUrlFromFullPublicUrl, thumbnailStoragePathFromMainPath } from '../../lib/image-upload';
 import { supabase } from '../../lib/supabase';
@@ -65,77 +65,6 @@ type Props = {
   catId: string;
   catName: string;
 };
-
-type ZoomableProps = {
-  uri: string;
-  disabled: boolean;
-};
-
-/** 핀치 확대·축소, 확대 시 한 손가락으로 이동 (웹은 일반 Image) */
-function AlbumZoomableImage({ uri, disabled }: ZoomableProps) {
-  const scale = useSharedValue(1);
-  const savedScale = useSharedValue(1);
-  const tx = useSharedValue(0);
-  const ty = useSharedValue(0);
-  const startTx = useSharedValue(0);
-  const startTy = useSharedValue(0);
-
-  useEffect(() => {
-    scale.value = 1;
-    savedScale.value = 1;
-    tx.value = 0;
-    ty.value = 0;
-  }, [uri]);
-
-  const pinch = Gesture.Pinch()
-    .enabled(!disabled)
-    .onStart(() => {
-      savedScale.value = scale.value;
-    })
-    .onUpdate((e) => {
-      scale.value = clamp(savedScale.value * e.scale, 1, 5);
-    })
-    .onEnd(() => {
-      if (scale.value < 1) {
-        scale.value = withTiming(1);
-        savedScale.value = 1;
-      } else {
-        savedScale.value = scale.value;
-      }
-      if (scale.value <= 1.01) {
-        tx.value = withTiming(0);
-        ty.value = withTiming(0);
-      }
-    });
-
-  const pan = Gesture.Pan()
-    .enabled(!disabled)
-    .maxPointers(1)
-    .onStart(() => {
-      startTx.value = tx.value;
-      startTy.value = ty.value;
-    })
-    .onUpdate((e) => {
-      if (scale.value > 1.02) {
-        tx.value = startTx.value + e.translationX;
-        ty.value = startTy.value + e.translationY;
-      }
-    });
-
-  const composed = Gesture.Simultaneous(pinch, pan);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
-  }));
-
-  return (
-    <GestureDetector gesture={composed}>
-      <Animated.View style={[{ flex: 1, overflow: 'hidden' }, animatedStyle]}>
-        <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
-      </Animated.View>
-    </GestureDetector>
-  );
-}
 
 export default function AlbumTab({ catId, catName }: Props) {
   const insets = useSafeAreaInsets();
@@ -381,9 +310,14 @@ export default function AlbumTab({ catId, catName }: Props) {
       >
         <GestureHandlerRootView style={{ flex: 1 }}>
           <View className="flex-1 bg-black/95">
+            {/* 확대 시 transform으로 이미지 레이어가 나중에 그려져 헤더를 덮음 → zIndex·배경으로 헤더를 위에 유지 */}
             <View
-              className="flex-row items-center justify-between px-4 pb-3"
-              style={{ paddingTop: Math.max(insets.top, 12) }}
+              className="flex-row items-center justify-between border-b border-white/10 bg-black px-4 pb-3"
+              style={{
+                paddingTop: Math.max(insets.top, 12),
+                zIndex: 20,
+                elevation: 20,
+              }}
             >
               <TouchableOpacity onPress={closeViewer} hitSlop={12} disabled={deleting}>
                 <Text className="text-base font-semibold text-white">닫기</Text>
@@ -403,7 +337,7 @@ export default function AlbumTab({ catId, catName }: Props) {
                 </View>
               ) : null}
             </View>
-            <View className="flex-1">
+            <View className="min-h-0 flex-1" style={{ zIndex: 0, overflow: 'hidden' }}>
               {viewerPhoto ? (
                 Platform.OS === 'web' ? (
                   <Image
@@ -412,9 +346,10 @@ export default function AlbumTab({ catId, catName }: Props) {
                     resizeMode="contain"
                   />
                 ) : (
-                  <AlbumZoomableImage
+                  <ZoomableImage
                     key={`${viewerPhoto.id}-${viewerSession}`}
                     uri={viewerPhoto.url}
+                    style={{ flex: 1 }}
                     disabled={deleting}
                   />
                 )
@@ -424,6 +359,7 @@ export default function AlbumTab({ catId, catName }: Props) {
               <View
                 className="absolute inset-0 items-center justify-center bg-black/40"
                 pointerEvents="auto"
+                style={{ zIndex: 40, elevation: 40 }}
               >
                 <ActivityIndicator size="large" color="#fff" />
               </View>

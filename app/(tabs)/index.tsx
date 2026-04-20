@@ -28,6 +28,7 @@ import {
 } from '../../lib/community-queries';
 import { truncateCatName, truncateUserNickname } from '../../lib/display-strings';
 import { fetchLatestCat } from '../../lib/fetch-latest-cat';
+import { getAgentScreenVisited } from '../../lib/agent-home-ui-flag';
 import { LEGAL_LINKS } from '../../lib/legal-urls';
 import { waGwa } from '../../lib/korean-particle';
 import { getNyanBtiArchetype } from '../../lib/nyan-bti-archetypes';
@@ -165,6 +166,15 @@ const homeScreenPressStyles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: '#ede9fe',
   },
+  /** 에이전트 화면 방문 후 홈: 칩 대신 단일 CTA */
+  agentChatCta: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: PRIMARY,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
 });
 
 const HOME_COMMUNITY_MAX = 5;
@@ -283,9 +293,11 @@ export default function HomeScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [communityTab, setCommunityTab] = useState<CommunityTab>('hot');
+  const [showHomeAgentChips, setShowHomeAgentChips] = useState(() => !getAgentScreenVisited());
 
   useFocusEffect(
     useCallback(() => {
+      setShowHomeAgentChips(!getAgentScreenVisited());
       void queryClient.invalidateQueries({ queryKey: ['community-best-posts'] });
       void queryClient.invalidateQueries({ queryKey: ['home-posts-latest'] });
       void queryClient.invalidateQueries({ queryKey: ['home-posts-mine'] });
@@ -361,6 +373,10 @@ export default function HomeScreen() {
   const goAgent = (quick: 'ate_well' | 'ate_little' | 'not_yet') => {
     router.push({ pathname: '/agent', params: { quick } });
   };
+
+  const goAgentChat = useCallback(() => {
+    router.push({ pathname: '/agent' });
+  }, [router]);
 
   const goHomeChallenge = useCallback(() => {
     const c = activeChallengeQuery.data?.challenge;
@@ -549,35 +565,48 @@ export default function HomeScreen() {
                   {displayNameShort} 오늘 아침밥은요?
                 </Text>
               </View>
-              <View className="mt-4 flex-row gap-2">
+              {showHomeAgentChips ? (
+                <View className="mt-4 flex-row gap-2">
+                  <TouchableOpacity
+                    onPress={() => goAgent('ate_well')}
+                    activeOpacity={0.88}
+                    style={homeScreenPressStyles.agentChip}
+                  >
+                    <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
+                      잘 먹었어요
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => goAgent('ate_little')}
+                    activeOpacity={0.88}
+                    style={homeScreenPressStyles.agentChip}
+                  >
+                    <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
+                      조금 남겼어요
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => goAgent('not_yet')}
+                    activeOpacity={0.88}
+                    style={homeScreenPressStyles.agentChip}
+                  >
+                    <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
+                      아직요
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
                 <TouchableOpacity
-                  onPress={() => goAgent('ate_well')}
-                  activeOpacity={0.88}
-                  style={homeScreenPressStyles.agentChip}
+                  onPress={goAgentChat}
+                  activeOpacity={0.9}
+                  className="mt-4"
+                  style={homeScreenPressStyles.agentChatCta}
+                  accessibilityRole="button"
+                  accessibilityLabel="냥에이전트와 대화"
                 >
-                  <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
-                    잘 먹었어요
-                  </Text>
+                  <Text className="text-center text-base font-bold text-white">냥에이전트와 대화</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => goAgent('ate_little')}
-                  activeOpacity={0.88}
-                  style={homeScreenPressStyles.agentChip}
-                >
-                  <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
-                    조금 남겼어요
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => goAgent('not_yet')}
-                  activeOpacity={0.88}
-                  style={homeScreenPressStyles.agentChip}
-                >
-                  <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
-                    아직요
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              )}
             </View>
 
             <View className="mt-6 rounded-2xl border border-violet-100 bg-white p-4">
