@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -19,7 +20,7 @@ import {
   useSmartKeyboardFieldFocus,
   useSmartKeyboardScrollExtraBottom,
 } from '../../components/SmartKeyboardScreen';
-import { applySessionFromAuthUrl, getEmailRedirectTo, getOAuthRedirectTo } from '../../lib/auth-url';
+import { getEmailRedirectTo, getOAuthRedirectTo } from '../../lib/auth-url';
 import { supabase } from '../../lib/supabase';
 
 const PRIMARY = '#7F77DD';
@@ -58,20 +59,22 @@ function LoginScreenInner() {
   }, []);
 
   const onKakaoLogin = useCallback(async () => {
-    const redirectTo = getOAuthRedirectTo();
+    const redirectTo = 'https://itlvdwxxdnckkixkopij.supabase.co/auth/v1/callback';
+    const authSessionRedirectUrl = Linking.createURL('auth/callback');
     setBusyKakao(true);
     try {
+      console.log('[kakao] signInWithOAuth 호출 전', { redirectTo, authSessionRedirectUrl });
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'kakao',
         options: {
           redirectTo,
           skipBrowserRedirect: true,
-          scopes: 'account_email',
           queryParams: {
             lang: 'ko',
           },
         },
       });
+      console.log('[kakao] signInWithOAuth 응답', { data, error });
 
       if (error) {
         Alert.alert('카카오 로그인', error.message);
@@ -82,15 +85,32 @@ function LoginScreenInner() {
         return;
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      console.log('[kakao] openAuthSessionAsync url', data.url);
+      console.log('[kakao] openAuthSessionAsync redirectUrl', authSessionRedirectUrl);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, authSessionRedirectUrl);
+      console.log('[kakao] WebBrowser 결과', result);
 
       if (result.type !== 'success' || !result.url) {
         return;
       }
+      console.log('[kakao] WebBrowser result.url', result.url);
 
-      const { ok, error: sessionErr } = await applySessionFromAuthUrl(supabase, result.url);
-      if (!ok) {
-        Alert.alert('카카오 로그인', sessionErr ?? '세션을 만들지 못했어요.');
+      const callbackUrl = new URL(result.url);
+      const hashParams = new URLSearchParams(callbackUrl.hash.replace(/^#/, ''));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+
+      if (!accessToken || !refreshToken) {
+        Alert.alert('카카오 로그인', '토큰을 받지 못했어요.');
+        return;
+      }
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (sessionError) {
+        Alert.alert('카카오 로그인', sessionError.message);
         return;
       }
 
