@@ -136,13 +136,15 @@ export function ZoomableImage({
 
   return (
     <GestureDetector gesture={composed}>
-      <Animated.View style={[{ overflow: 'hidden' }, style]} onLayout={onLayout}>
-        <Animated.Image
-          source={{ uri }}
-          style={[{ width: '100%', height: '100%' }, imageStyle]}
-          resizeMode={resizeMode}
-        />
-      </Animated.View>
+      <View style={style} onLayout={onLayout} collapsable={false}>
+        <Animated.View style={[{ flex: 1, overflow: 'hidden' }, animatedStyle]}>
+          <Animated.Image
+            source={{ uri }}
+            style={[{ width: '100%', height: '100%' }, imageStyle]}
+            resizeMode={resizeMode}
+          />
+        </Animated.View>
+      </View>
     </GestureDetector>
   );
 }

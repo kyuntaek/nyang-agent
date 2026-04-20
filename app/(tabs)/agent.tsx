@@ -179,7 +179,7 @@ function AgentScreenInner() {
 
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
-  const bootstrappedCatId = useRef<string | null>(null);
+  const bootstrappedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,12 +216,21 @@ function AgentScreenInner() {
     if (!trimmed || sending) return;
 
     const catId = cat?.id;
-    if (!catId) return;
+    if (!catId || !cat) return;
 
-    const historyForApi = toApiHistory(messagesRef.current);
+    const catName = cat.name?.trim() || '냥이';
+    const openingLine = `${catName} 오늘 아침밥은요? 🍚`;
 
+    const prev = messagesRef.current;
+    const withOpening: ChatMessage[] =
+      prev.length === 0
+        ? [{ id: newId(), role: 'assistant', content: openingLine }]
+        : prev;
     const userMsg: ChatMessage = { id: newId(), role: 'user', content: trimmed };
-    setMessages((prev) => [...prev, userMsg]);
+    const nextThread = [...withOpening, userMsg];
+    const historyForApi = toApiHistory(nextThread);
+
+    setMessages(nextThread);
     setInput('');
     setSending(true);
 
@@ -237,30 +246,34 @@ function AgentScreenInner() {
     } finally {
       setSending(false);
     }
-  }, [cat?.id, sending]);
+  }, [cat, sending]);
 
   useEffect(() => {
     if (catLoading || cat == null) return;
-    if (bootstrappedCatId.current === cat.id) return;
-    bootstrappedCatId.current = cat.id;
+    const bootstrapKey = `${cat.id}::${quickParam || ''}`;
+    if (bootstrappedKeyRef.current === bootstrapKey) return;
+    bootstrappedKeyRef.current = bootstrapKey;
 
     const name = cat.name?.trim() || '냥이';
-    const opening = `${name} 오늘 어때요? 🐱`;
-    const openingMsg: ChatMessage = { id: newId(), role: 'assistant', content: opening };
+    const openingMsg: ChatMessage = {
+      id: newId(),
+      role: 'assistant',
+      content: `${name} 오늘 아침밥은요? 🍚`,
+    };
 
-    const label = QUICK_CHIPS.find((c) => c.key === quickParam)?.label;
-    if (!label) {
-      setMessages([openingMsg]);
+    const chip = QUICK_CHIPS.find((c) => c.key === quickParam);
+    if (!chip) {
+      setMessages([]);
       return;
     }
 
-    const userMsg: ChatMessage = { id: newId(), role: 'user', content: label };
+    const userMsg: ChatMessage = { id: newId(), role: 'user', content: chip.label };
     setMessages([openingMsg, userMsg]);
     setSending(true);
 
     void (async () => {
       try {
-        const reply = await invokeAgentChat(cat.id, label, []);
+        const reply = await invokeAgentChat(cat.id, chip.label, []);
         setMessages((prev) => [...prev, { id: newId(), role: 'assistant', content: reply }]);
       } catch (e) {
         const msg = e instanceof Error ? e.message : '알 수 없는 오류';
@@ -375,6 +388,23 @@ function AgentScreenInner() {
               className="border-t border-violet-200 bg-violet-100 px-4 pt-2"
               style={{ paddingBottom: Math.max(insets.bottom, 8) }}
             >
+              {!quickParam ? (
+                <View className="mb-2 flex-row flex-wrap gap-2">
+                  {QUICK_CHIPS.map((c) => (
+                    <TouchableOpacity
+                      key={c.key}
+                      onPress={() => void sendToAgent(c.label)}
+                      disabled={sending}
+                      activeOpacity={0.85}
+                      className={`rounded-full border-2 border-violet-300 bg-violet-50 px-3 py-2 ${
+                        sending ? 'opacity-45' : ''
+                      }`}
+                    >
+                      <Text className="text-sm font-semibold text-violet-950">{c.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
               <View className="flex-row items-end gap-2">
                 <TextInput
                   ref={inputRef}

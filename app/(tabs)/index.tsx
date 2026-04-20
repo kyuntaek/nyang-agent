@@ -562,7 +562,9 @@ export default function HomeScreen() {
                   className="min-w-0 flex-1 text-lg font-bold leading-6 text-violet-950"
                   numberOfLines={2}
                 >
-                  {displayNameShort} 오늘 아침밥은요?
+                  {showHomeAgentChips
+                    ? `${displayNameShort} 오늘 아침밥은요?`
+                    : `${displayNameShort}에 대해 얘기해봐요.`}
                 </Text>
               </View>
               {showHomeAgentChips ? (
