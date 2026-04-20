@@ -98,3 +98,47 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
   return token;
 }
+
+function readRoutePathFromNotificationData(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const record = data as Record<string, unknown>;
+
+  const rawPath = record.path ?? record.href ?? record.url ?? record.screen;
+  if (typeof rawPath !== 'string') return null;
+
+  const path = rawPath.trim();
+  if (!path) return null;
+
+  if (path.startsWith('/')) return path;
+  return `/${path.replace(/^\/+/, '')}`;
+}
+
+/**
+ * 알림 수신/클릭 리스너 등록.
+ * - 수신: 디버그 로그
+ * - 클릭: payload의 path/href/url/screen 값을 읽어 화면 이동
+ */
+export function attachNotificationListeners(onNavigate: (path: string) => void): () => void {
+  const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+    if (__DEV__) {
+      console.log('[push] foreground notification received', notification.request.content);
+    }
+  });
+
+  const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const data = response.notification.request.content.data;
+    const path = readRoutePathFromNotificationData(data);
+    if (!path) {
+      if (__DEV__) {
+        console.log('[push] notification click without route data', data);
+      }
+      return;
+    }
+    onNavigate(path);
+  });
+
+  return () => {
+    receivedSub.remove();
+    responseSub.remove();
+  };
+}

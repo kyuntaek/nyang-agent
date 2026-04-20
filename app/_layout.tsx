@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { applySessionFromAuthUrl, looksLikeAuthCallback } from '../lib/auth-url';
-import { registerForPushNotifications } from '../lib/notifications';
+import { attachNotificationListeners, registerForPushNotifications } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 
 function RootNavigation() {
@@ -59,6 +59,14 @@ function RootNavigation() {
     if (!session?.user?.id) return;
     void registerForPushNotifications();
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const detach = attachNotificationListeners((path) => {
+      router.push(path as never);
+    });
+    return detach;
+  }, [router, session?.user?.id]);
 
   useEffect(() => {
     if (session === undefined || splashHiddenRef.current) return;
