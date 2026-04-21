@@ -4,17 +4,14 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ZoomableImage } from '../ZoomableImage';
+import { ImageZoomModal } from '../ImageZoomModal';
 import { fetchCatPhotos, type CatPhotoRow } from '../../lib/cat-life-queries';
 import { processPickedImageForUpload, thumbnailPublicUrlFromFullPublicUrl, thumbnailStoragePathFromMainPath } from '../../lib/image-upload';
 import { supabase } from '../../lib/supabase';
@@ -71,8 +68,6 @@ export default function AlbumTab({ catId, catName }: Props) {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [viewerPhoto, setViewerPhoto] = useState<CatPhotoRow | null>(null);
-  /** 모달을 닫았다 같은 사진을 다시 열 때도 줌·이동 상태가 남지 않도록 키 분리 */
-  const [viewerSession, setViewerSession] = useState(0);
   const [deleting, setDeleting] = useState(false);
 
   const {
@@ -288,10 +283,7 @@ export default function AlbumTab({ catId, catName }: Props) {
                 key={p.id}
                 accessibilityRole="imagebutton"
                 accessibilityLabel="사진 크게 보기"
-                onPress={() => {
-                  setViewerSession((s) => s + 1);
-                  setViewerPhoto(p);
-                }}
+                onPress={() => setViewerPhoto(p)}
                 className="mb-2 overflow-hidden rounded-xl bg-violet-100"
                 style={{ width: '31%', aspectRatio: 1 }}
               >
@@ -302,71 +294,49 @@ export default function AlbumTab({ catId, catName }: Props) {
         )}
       </ScrollView>
 
-      <Modal
+      <ImageZoomModal
         visible={viewerPhoto !== null}
-        animationType="fade"
-        transparent
-        onRequestClose={closeViewer}
-      >
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <View className="flex-1 bg-black/95">
-            {/* 확대 시 transform으로 이미지 레이어가 나중에 그려져 헤더를 덮음 → zIndex·배경으로 헤더를 위에 유지 */}
-            <View
-              className="flex-row items-center justify-between border-b border-white/10 bg-black px-4 pb-3"
-              style={{
-                paddingTop: Math.max(insets.top, 12),
-                zIndex: 20,
-                elevation: 20,
-              }}
-            >
-              <TouchableOpacity onPress={closeViewer} hitSlop={12} disabled={deleting}>
-                <Text className="text-base font-semibold text-white">닫기</Text>
-              </TouchableOpacity>
-              {viewerPhoto ? (
-                <View className="flex-1 flex-row items-center justify-end gap-3">
-                  <TouchableOpacity onPress={() => void setAsHomeRepresentative()} hitSlop={12} disabled={deleting}>
-                    <Text className="text-base font-semibold text-emerald-300">홈 대표</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => confirmDeletePhoto(viewerPhoto)}
-                    hitSlop={12}
-                    disabled={deleting}
-                  >
-                    <Text className="text-base font-semibold text-red-300">삭제</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-            </View>
-            <View className="min-h-0 flex-1" style={{ zIndex: 0, overflow: 'hidden' }}>
-              {viewerPhoto ? (
-                Platform.OS === 'web' ? (
-                  <Image
-                    source={{ uri: viewerPhoto.url }}
-                    className="h-full w-full"
-                    resizeMode="contain"
-                  />
-                ) : (
-                  <ZoomableImage
-                    key={`${viewerPhoto.id}-${viewerSession}`}
-                    uri={viewerPhoto.url}
-                    style={{ flex: 1 }}
-                    disabled={deleting}
-                  />
-                )
-              ) : null}
-            </View>
-            {deleting ? (
-              <View
-                className="absolute inset-0 items-center justify-center bg-black/40"
-                pointerEvents="auto"
-                style={{ zIndex: 40, elevation: 40 }}
+        onClose={closeViewer}
+        images={photos.map((p) => p.url)}
+        initialIndex={
+          viewerPhoto ? Math.max(0, photos.findIndex((p) => p.id === viewerPhoto.id)) : 0
+        }
+        onIndexChange={(i) => {
+          const next = photos[i];
+          if (next) setViewerPhoto(next);
+        }}
+        headerAccessory={
+          viewerPhoto ? (
+            <View className="flex-row items-center gap-3">
+              <TouchableOpacity
+                onPress={() => void setAsHomeRepresentative()}
+                hitSlop={12}
+                disabled={deleting}
               >
-                <ActivityIndicator size="large" color="#fff" />
-              </View>
-            ) : null}
-          </View>
-        </GestureHandlerRootView>
-      </Modal>
+                <Text className="text-base font-semibold text-emerald-300">홈 대표</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => confirmDeletePhoto(viewerPhoto)}
+                hitSlop={12}
+                disabled={deleting}
+              >
+                <Text className="text-base font-semibold text-red-300">삭제</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        }
+        overlay={
+          deleting ? (
+            <View
+              className="absolute inset-0 items-center justify-center bg-black/40"
+              pointerEvents="auto"
+              style={{ zIndex: 40, elevation: 40 }}
+            >
+              <ActivityIndicator size="large" color="#fff" />
+            </View>
+          ) : null
+        }
+      />
 
       <TouchableOpacity
         onPress={() => void uploadPhoto()}

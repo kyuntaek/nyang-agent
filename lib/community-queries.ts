@@ -93,6 +93,9 @@ export type PostFeedRow = {
 
 export const POST_PAGE_SIZE = 12;
 
+/** 커뮤니티 피드 정렬 (채널 탭 목록) */
+export type CommunityPostSort = 'latest' | 'comments' | 'likes';
+
 /** 커뮤니티 검색어 정리 (ilike 와일드카드·OR 구문 쉼표 방지) */
 export function sanitizeCommunitySearchTerm(raw: string): string {
   return raw
@@ -160,6 +163,7 @@ async function fetchCommunityPostsPageRpc(params: {
   channel: string | null;
   searchTerm: string;
   offset: number;
+  sort: CommunityPostSort;
 }): Promise<PostFeedRow[] | null> {
   const s = sanitizeCommunitySearchTerm(params.searchTerm);
   if (!s) return null;
@@ -170,13 +174,14 @@ async function fetchCommunityPostsPageRpc(params: {
     p_search: s,
     p_offset: params.offset,
     p_limit: POST_PAGE_SIZE,
+    p_sort: params.sort,
   });
 
   if (error) {
     if (error.code === '42883' || /function .* does not exist/i.test(error.message)) {
       if (__DEV__) {
         console.warn(
-          '[community_posts_page] RPC 없음. supabase/migrations/20260422140000_community_posts_search_rpc.sql 적용 후 재시도하세요.',
+          '[community_posts_page] RPC 없음 또는 구버전. migrations 20260422140000(검색)·20260422141000(정렬) 적용 후 재시도하세요.',
           error.message
         );
       }
@@ -279,6 +284,18 @@ export function postThumbnailUrl(row: PostFeedRow): string | null {
 export function postThumbnailUrlFromPostRow(row: PostRow): string | null {
   const raw = firstPostImageUrl(row) ?? firstImageUrlFromBody(row.body);
   return trimValidHttpUrl(raw);
+}
+
+/**
+ * 커뮤니티 피드 상단 배너: 첨부 이미지 → 본문 내 이미지 URL만.
+ * 고양이 프로필 폴백은 제외 (`postThumbnailUrl`과 구분).
+ */
+export function postListingBannerUrl(row: PostFeedRow): string | null {
+  const uAttach = trimValidHttpUrl(firstPostImageUrl(row));
+  if (uAttach) return feedThumbUrlIfApplicable(uAttach);
+  const uBody = trimValidHttpUrl(firstImageUrlFromBody(row.body));
+  if (uBody) return feedThumbUrlIfApplicable(uBody);
+  return null;
 }
 
 /** 인기글 카드용 짧은 제목 (첫 줄 또는 앞부분) */
@@ -384,8 +401,10 @@ export async function fetchPostsPage(params: {
   pageParam: number;
   channel: string | null;
   search: string;
+  sort?: CommunityPostSort;
 }): Promise<PostFeedRow[]> {
   const { pageParam, channel, search } = params;
+  const sort: CommunityPostSort = params.sort ?? 'latest';
   const from = pageParam * POST_PAGE_SIZE;
   const to = from + POST_PAGE_SIZE - 1;
 
@@ -396,23 +415,26 @@ export async function fetchPostsPage(params: {
       channel,
       searchTerm: search,
       offset: from,
+      sort,
     });
     if (rpcRows != null) return rpcRows;
   }
 
-  let q = supabase
-    .from('posts')
-    .select(POST_FEED_SELECT)
-    .order('created_at', { ascending: false })
-    .range(from, to);
-
+  let q = supabase.from('posts').select(POST_FEED_SELECT);
+  if (sort === 'likes') {
+    q = q.order('like_count', { ascending: false }).order('created_at', { ascending: false });
+  } else if (sort === 'comments') {
+    q = q.order('comment_count', { ascending: false }).order('created_at', { ascending: false });
+  } else {
+    q = q.order('created_at', { ascending: false });
+  }
   if (channel) {
     q = q.eq('channel', channel);
   }
-
   if (s) {
     q = q.ilike('body', `%${s}%`);
   }
+  q = q.range(from, to);
 
   const { data, error } = await q;
   if (error) {
@@ -446,6 +468,7 @@ export async function fetchMyPostsPage(params: {
       channel: null,
       searchTerm: search,
       offset: from,
+      sort: 'latest',
     });
     if (rpcRows != null) return rpcRows;
   }

@@ -23,12 +23,15 @@ import {
   fetchPostsPage,
   formatHomePostDateTime,
   postChannelDisplayLabel,
+  postListingBannerUrl,
   postPreviewTitle,
-  postThumbnailUrl,
 } from '../../lib/community-queries';
 import { truncateCatName, truncateUserNickname } from '../../lib/display-strings';
+import { fetchAnniversaries } from '../../lib/cat-life-queries';
 import { fetchLatestCat } from '../../lib/fetch-latest-cat';
+import { pickSoonestAnniversaryHighlight } from '../../lib/home-anniversary';
 import { getAgentScreenVisited } from '../../lib/agent-home-ui-flag';
+import { formatAgentQuestion, getAgentTimeContext } from '../../lib/agent-time-context';
 import { LEGAL_LINKS } from '../../lib/legal-urls';
 import { waGwa } from '../../lib/korean-particle';
 import { getNyanBtiArchetype } from '../../lib/nyan-bti-archetypes';
@@ -52,6 +55,19 @@ const homePostCardStyles = StyleSheet.create({
   },
   pressRow: { flexDirection: 'row' },
   thumb: { width: 92, height: 92, backgroundColor: '#ede9fe' },
+  thumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#ede9fe',
+  },
+  thumbPlaceholderIcon: { width: 52, height: 52 },
+  noImageLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#a78bfa',
+    letterSpacing: 0.2,
+  },
   content: { minWidth: 0, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 12 },
   contentFlex: { flex: 1 },
   author: { fontSize: 12, fontWeight: '500', color: '#a78bfa' },
@@ -171,9 +187,24 @@ const homeScreenPressStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
-    backgroundColor: PRIMARY,
+    backgroundColor: '#CCABDB',
     paddingVertical: 14,
     paddingHorizontal: 16,
+  },
+  agentChatCtaText: {
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#3b0764',
+  },
+  homeAnniversaryCard: {
+    marginTop: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ede9fe',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
 });
 
@@ -225,7 +256,7 @@ function homeFeedRows(data: PostFeedRow[] | undefined): PostFeedRow[] {
   return data.filter((row) => row != null && typeof row === 'object' && typeof row.id === 'string' && row.id.length > 0);
 }
 
-/** 홈 커뮤니티: 썸네일 있으면 좌측, 없으면 글만(일반·베스트 동일) */
+/** 홈 커뮤니티: 좌측 92px에 썸네일 또는 냥 아이콘 + No Image */
 function HomeUnifiedPostCard({
   authorLabel,
   dateTimeLabel,
@@ -246,14 +277,27 @@ function HomeUnifiedPostCard({
   thumb: string | null;
   onPress: () => void;
 }) {
+  const hasBanner = Boolean(thumb?.trim());
   return (
     <TouchableOpacity
       activeOpacity={0.88}
       onPress={onPress}
-      style={[homePostCardStyles.press, thumb ? homePostCardStyles.pressRow : null]}
+      style={[homePostCardStyles.press, homePostCardStyles.pressRow]}
     >
-      {thumb ? <Image source={{ uri: thumb }} style={homePostCardStyles.thumb} resizeMode="cover" /> : null}
-      <View style={[homePostCardStyles.content, thumb ? homePostCardStyles.contentFlex : null]}>
+      {hasBanner && thumb ? (
+        <Image source={{ uri: thumb }} style={homePostCardStyles.thumb} resizeMode="cover" />
+      ) : (
+        <View style={[homePostCardStyles.thumb, homePostCardStyles.thumbPlaceholder]}>
+          <Image
+            source={require('../../assets/images/community-no-image.png')}
+            style={homePostCardStyles.thumbPlaceholderIcon}
+            resizeMode="contain"
+            accessibilityLabel="이미지 없음"
+          />
+          <Text style={homePostCardStyles.noImageLabel}>No Image</Text>
+        </View>
+      )}
+      <View style={[homePostCardStyles.content, homePostCardStyles.contentFlex]}>
         <View style={homePostCardStyles.metaBlock}>
           <Text
             style={homePostCardStyles.author}
@@ -303,6 +347,7 @@ export default function HomeScreen() {
       void queryClient.invalidateQueries({ queryKey: ['home-posts-mine'] });
       void queryClient.invalidateQueries({ queryKey: ['active-challenge'] });
       void queryClient.invalidateQueries({ queryKey: ['open-challenges-with-counts'] });
+      void queryClient.invalidateQueries({ queryKey: ['anniversaries'] });
     }, [queryClient])
   );
 
@@ -334,6 +379,18 @@ export default function HomeScreen() {
     queryFn: fetchActiveChallengeWithCount,
     staleTime: 60_000,
   });
+
+  const anniversariesQuery = useQuery({
+    queryKey: ['anniversaries', cat?.id ?? '__none__'],
+    queryFn: () => fetchAnniversaries(cat!.id),
+    enabled: Boolean(cat?.id),
+    staleTime: 30_000,
+  });
+
+  const homeAnniversaryHighlight = useMemo(() => {
+    if (!cat) return null;
+    return pickSoonestAnniversaryHighlight(cat, anniversariesQuery.data ?? []);
+  }, [cat, anniversariesQuery.data]);
 
   const bestRows = useMemo(() => homeFeedRows(bestQuery.data), [bestQuery.data]);
   const latestRows = useMemo(() => homeFeedRows(latestQuery.data), [latestQuery.data]);
@@ -370,12 +427,16 @@ export default function HomeScreen() {
     return rep || av || null;
   }, [cat?.representative_photo_url, cat?.avatar_url]);
 
-  const goAgent = (quick: 'ate_well' | 'ate_little' | 'not_yet') => {
-    router.push({ pathname: '/agent', params: { quick } });
+  const goAgentQuick = (index: 0 | 1 | 2) => {
+    router.push({ pathname: '/agent', params: { quick: `q${index}` } });
   };
 
   const goAgentChat = useCallback(() => {
     router.push({ pathname: '/agent' });
+  }, [router]);
+
+  const goMyAnniversaryTab = useCallback(() => {
+    router.push({ pathname: '/my', params: { tab: 'anniversary' } });
   }, [router]);
 
   const goHomeChallenge = useCallback(() => {
@@ -392,6 +453,8 @@ export default function HomeScreen() {
   };
 
   const scrollBottomPadding = Math.max(insets.bottom, 16) + 28;
+
+  const agentTimeCtx = getAgentTimeContext();
 
   return (
     <View
@@ -499,6 +562,46 @@ export default function HomeScreen() {
               </View>
             </View>
 
+            {cat ? (
+              <View style={homeScreenPressStyles.homeAnniversaryCard}>
+                {anniversariesQuery.isPending ? (
+                  <View className="items-center py-1">
+                    <ActivityIndicator size="small" color={PRIMARY} />
+                  </View>
+                ) : homeAnniversaryHighlight ? (
+                  <Text className="text-center text-base leading-6 text-violet-900">
+                    <Text className="font-bold text-violet-950">{homeAnniversaryHighlight.title}</Text>
+                    {' '}
+                    <Text className="font-extrabold" style={{ color: PRIMARY }}>
+                      {homeAnniversaryHighlight.countdownLabel}
+                    </Text>
+                  </Text>
+                ) : (
+                  <View className="flex-row items-stretch">
+                    <View className="min-w-0 flex-1" />
+                    <View className="min-w-0 flex-[2] justify-center px-1">
+                      <Text className="text-center text-sm font-semibold leading-5 text-violet-600">
+                        아직 기념일을 등록하지 않았어요!
+                      </Text>
+                    </View>
+                    <View className="min-w-0 flex-1 items-end justify-center">
+                      <TouchableOpacity
+                        onPress={goMyAnniversaryTab}
+                        hitSlop={8}
+                        activeOpacity={0.75}
+                        accessibilityRole="link"
+                        accessibilityLabel="기념일 등록, 마이페이지 기념일 탭으로 이동"
+                      >
+                        <Text className="text-xs font-extrabold" style={{ color: PRIMARY }}>
+                          기념일등록 {'>'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : null}
+
             {activeChallengeQuery.isPending ? (
               <View className="mt-6 overflow-hidden rounded-3xl bg-[#7F77DD] shadow-md">
                 <View className="items-center py-8 px-5">
@@ -563,39 +666,24 @@ export default function HomeScreen() {
                   numberOfLines={2}
                 >
                   {showHomeAgentChips
-                    ? `${displayNameShort} 오늘 아침밥은요?`
+                    ? formatAgentQuestion(agentTimeCtx, displayNameShort)
                     : `${displayNameShort}에 대해 얘기해봐요.`}
                 </Text>
               </View>
               {showHomeAgentChips ? (
-                <View className="mt-4 flex-row gap-2">
-                  <TouchableOpacity
-                    onPress={() => goAgent('ate_well')}
-                    activeOpacity={0.88}
-                    style={homeScreenPressStyles.agentChip}
-                  >
-                    <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
-                      잘 먹었어요
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => goAgent('ate_little')}
-                    activeOpacity={0.88}
-                    style={homeScreenPressStyles.agentChip}
-                  >
-                    <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
-                      조금 남겼어요
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => goAgent('not_yet')}
-                    activeOpacity={0.88}
-                    style={homeScreenPressStyles.agentChip}
-                  >
-                    <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
-                      아직요
-                    </Text>
-                  </TouchableOpacity>
+                <View className="mt-4 flex-row flex-wrap gap-2">
+                  {agentTimeCtx.chips.map((chipLabel, idx) => (
+                    <TouchableOpacity
+                      key={`home-agent-chip-${agentTimeCtx.slot}-${idx}`}
+                      onPress={() => goAgentQuick(idx as 0 | 1 | 2)}
+                      activeOpacity={0.88}
+                      style={homeScreenPressStyles.agentChip}
+                    >
+                      <Text className="text-center text-xs font-bold text-violet-900" numberOfLines={1}>
+                        {chipLabel}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               ) : (
                 <TouchableOpacity
@@ -606,7 +694,7 @@ export default function HomeScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="냥에이전트와 대화"
                 >
-                  <Text className="text-center text-base font-bold text-white">냥에이전트와 대화</Text>
+                  <Text style={homeScreenPressStyles.agentChatCtaText}>냥에이전트와 대화</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -684,7 +772,7 @@ export default function HomeScreen() {
                           body={typeof row.body === 'string' ? row.body : ''}
                           likeCount={Number(row.like_count ?? 0)}
                           commentCount={Number(row.comment_count ?? 0)}
-                          thumb={postThumbnailUrl(row)}
+                          thumb={postListingBannerUrl(row)}
                           onPress={() => openPost(row.id)}
                         />
                       ))}
@@ -721,7 +809,7 @@ export default function HomeScreen() {
                           body={typeof row.body === 'string' ? row.body : ''}
                           likeCount={Number(row.like_count ?? 0)}
                           commentCount={Number(row.comment_count ?? 0)}
-                          thumb={postThumbnailUrl(row)}
+                          thumb={postListingBannerUrl(row)}
                           onPress={() => openPost(row.id)}
                         />
                       ))}
@@ -758,7 +846,7 @@ export default function HomeScreen() {
                           body={typeof row.body === 'string' ? row.body : ''}
                           likeCount={Number(row.like_count ?? 0)}
                           commentCount={Number(row.comment_count ?? 0)}
-                          thumb={postThumbnailUrl(row)}
+                          thumb={postListingBannerUrl(row)}
                           onPress={() => openPost(row.id)}
                         />
                       ))}

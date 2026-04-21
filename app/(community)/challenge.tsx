@@ -19,7 +19,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ImageZoomModal } from '../../components/ImageZoomModal';
+import { ImageZoomModal, type ImageZoomSlideMeta } from '../../components/ImageZoomModal';
 import {
   processPickedImageForUpload,
   thumbnailPublicUrlFromFullPublicUrl,
@@ -53,6 +53,14 @@ function challengeBtiChipText(code: string | null | undefined): string | null {
   if (arc) return `냥BTI ${arc.nickname}`;
   if (t.length <= 10) return `냥BTI ${t}`;
   return `냥BTI ${t.slice(0, 8)}…`;
+}
+
+/** 냥BTI 칩 안 텍스트: `냥BTI {별명}`에서 앞의 "냥BTI "만 제거 */
+function challengeBtiChipInnerOnly(code: string | null | undefined): string {
+  const t = challengeBtiChipText(code)?.trim();
+  if (!t) return '';
+  if (t.startsWith('냥BTI ')) return t.slice(5).trim();
+  return t;
 }
 
 function challengeGridThumbSource(fullUrl: string): string {
@@ -166,12 +174,10 @@ export default function ChallengeScreen() {
   const [pickedUri, setPickedUri] = useState<string | null>(null);
   const [pickedProcessed, setPickedProcessed] = useState<ProcessedImageBuffers | null>(null);
 
-  const [zoomPreview, setZoomPreview] = useState<{
-    uri: string;
-    caption: string | null;
-    authorNickname: string;
-    catName: string | null;
-    nyanBtiChip: string | null;
+  const [zoomGallery, setZoomGallery] = useState<{
+    urls: string[];
+    index: number;
+    slidesMeta: ImageZoomSlideMeta[];
   } | null>(null);
 
   const entriesListSignature = useMemo(
@@ -485,12 +491,19 @@ export default function ChallengeScreen() {
         <TouchableOpacity
           activeOpacity={0.88}
           onPress={() =>
-            setZoomPreview({
-              uri: item.photo_url,
-              caption: item.caption,
-              authorNickname: truncateUserNickname(item.author_nickname?.trim() || '냥집사'),
-              catName: item.cat_name?.trim() ? truncateCatName(item.cat_name.trim()) : null,
-              nyanBtiChip: challengeBtiChipText(item.nyan_bti_type),
+            setZoomGallery({
+              urls: entries.map((e) => e.photo_url),
+              index: Math.max(0, entries.findIndex((e) => e.id === item.id)),
+              slidesMeta: entries.map(
+                (e): ImageZoomSlideMeta => ({
+                  caption: e.caption,
+                  challengeTwoRow: {
+                    btiChipLabel: challengeBtiChipInnerOnly(e.nyan_bti_type),
+                    catName: e.cat_name?.trim() ? truncateCatName(e.cat_name.trim()) : '냥이',
+                    ownerNickname: truncateUserNickname(e.author_nickname?.trim() || '냥집사'),
+                  },
+                })
+              ),
             })
           }
           className="mb-2 overflow-hidden rounded-xl bg-violet-100"
@@ -505,7 +518,7 @@ export default function ChallengeScreen() {
         </TouchableOpacity>
       );
     },
-    [cellSize, uid]
+    [cellSize, uid, entries]
   );
 
   return (
@@ -688,12 +701,11 @@ export default function ChallengeScreen() {
       </Modal>
 
       <ImageZoomModal
-        uri={zoomPreview?.uri ?? null}
-        caption={zoomPreview?.caption}
-        authorNickname={zoomPreview?.authorNickname}
-        catName={zoomPreview?.catName}
-        nyanBtiChip={zoomPreview?.nyanBtiChip}
-        onClose={() => setZoomPreview(null)}
+        visible={zoomGallery !== null}
+        onClose={() => setZoomGallery(null)}
+        images={zoomGallery?.urls ?? []}
+        initialIndex={zoomGallery?.index ?? 0}
+        slidesMeta={zoomGallery?.slidesMeta}
       />
     </View>
   );

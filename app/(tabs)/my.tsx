@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -12,10 +12,12 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TabScreenHeaderRow } from '../../components/TabScreenHeaderRow';
 import AlbumTab from '../../components/my/AlbumTab';
 import { AnniversaryTab } from '../../components/my/AnniversaryTab';
 import { fetchLatestCat } from '../../lib/fetch-latest-cat';
 import { getNyanBtiArchetype, type NyanBtiArchetype } from '../../lib/nyan-bti-archetypes';
+import { communityScreenPaddingTop } from '../../lib/community-tab-styles';
 import { supabase } from '../../lib/supabase';
 
 const PRIMARY = '#7F77DD';
@@ -103,10 +105,22 @@ const tabStyles = StyleSheet.create({
   },
 });
 
+function firstTabParam(v: string | string[] | undefined): MyTab | null {
+  const s = Array.isArray(v) ? v[0] : v;
+  if (s === 'anniversary' || s === 'album' || s === 'profile') return s;
+  return null;
+}
+
 export default function MyScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const [tab, setTab] = useState<MyTab>('profile');
+
+  useEffect(() => {
+    const t = firstTabParam(params.tab);
+    if (t) setTab(t);
+  }, [params.tab]);
 
   const { data: cat, isPending, isError, error, refetch } = useQuery({
     queryKey: ['home-cat'],
@@ -149,8 +163,8 @@ export default function MyScreen() {
 
   return (
     <View className="flex-1 bg-violet-50">
-      <View style={{ paddingTop: insets.top + 12 }} className="px-5">
-        <Text className="text-xl font-bold text-violet-950">마이페이지</Text>
+      <View style={{ paddingTop: communityScreenPaddingTop(insets.top) }} className="px-5">
+        <TabScreenHeaderRow title="마이페이지" />
 
         {!isPending && !isError && (
           <View style={tabStyles.tabRow}>

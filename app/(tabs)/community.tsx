@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
@@ -15,15 +15,16 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { fetchOpenChallengesWithCounts } from '../../lib/challenge-queries';
 import {
   POST_CHANNELS,
+  type CommunityPostSort,
   type PostChannelDb,
   type PostFeedRow,
   fetchPostsPage,
   getNextPostsPageParam,
-  postThumbnailUrl,
+  postListingBannerUrl,
 } from '../../lib/community-queries';
+import { TabScreenHeaderRow } from '../../components/TabScreenHeaderRow';
 import { truncateUserNickname } from '../../lib/display-strings';
 import { COMMUNITY_PRIMARY, communityChannelTabStyles, communityScreenPaddingTop } from '../../lib/community-tab-styles';
 
@@ -81,11 +82,11 @@ function useDebounced<T>(value: T, ms: number): T {
   return d;
 }
 
-type CommunityChallengeBannerItem = {
-  id: string;
-  title: string;
-  participantCount: number;
-};
+const COMMUNITY_SORT_CHIPS: { key: CommunityPostSort; label: string }[] = [
+  { key: 'latest', label: '최신글순' },
+  { key: 'comments', label: '댓글순' },
+  { key: 'likes', label: '좋아요순' },
+];
 
 function CommunityListHeader({
   search,
@@ -93,22 +94,20 @@ function CommunityListHeader({
   searchInputRef,
   channelKey,
   setChannelKey,
-  challengeItems,
-  onChallengePress,
-  challengeLoading,
+  sortKey,
+  setSortKey,
 }: {
   search: string;
   setSearch: (s: string) => void;
   searchInputRef: RefObject<TextInput | null>;
   channelKey: CommunityFeedChannelKey;
   setChannelKey: (k: CommunityFeedChannelKey) => void;
-  challengeItems: CommunityChallengeBannerItem[];
-  onChallengePress: (challengeId: string) => void;
-  challengeLoading: boolean;
+  sortKey: CommunityPostSort;
+  setSortKey: (s: CommunityPostSort) => void;
 }) {
   return (
     <View className="pb-2">
-      <Text className="text-xl font-bold text-violet-950">커뮤니티</Text>
+      <TabScreenHeaderRow title="커뮤니티" />
 
       <TextInput
         ref={searchInputRef}
@@ -119,7 +118,7 @@ function CommunityListHeader({
         className="mt-4 rounded-2xl border-2 border-violet-100 bg-white px-4 py-3 text-base text-violet-950"
         returnKeyType="search"
       />
-      <Text className="mt-2 text-xs leading-4 text-violet-500">
+      <Text className="mt-2 text-center text-xs leading-4 text-violet-500">
         본문·요약·집사 닉네임·냥 이름 중 하나라도 맞으면 표시돼요.
       </Text>
 
@@ -166,34 +165,38 @@ function CommunityListHeader({
         })}
       </ScrollView>
 
-      {challengeLoading ? (
-        <View className="mt-5 items-center justify-center rounded-2xl bg-violet-100 py-8">
-          <ActivityIndicator color={PRIMARY} />
+      <View className="mt-5 overflow-hidden rounded-2xl px-5 py-4" style={{ backgroundColor: PRIMARY }}>
+        <View className="flex-row gap-2">
+          {COMMUNITY_SORT_CHIPS.map((chip) => {
+            const active = chip.key === sortKey;
+            return (
+              <TouchableOpacity
+                key={chip.key}
+                onPress={() => setSortKey(chip.key)}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                className="min-w-0 flex-1 rounded-xl px-1 py-2.5"
+                style={{
+                  backgroundColor: active ? '#ffffff' : 'transparent',
+                  borderWidth: active ? 0 : 1,
+                  borderColor: 'rgba(255,255,255,0.35)',
+                }}
+              >
+                <Text
+                  className="text-center text-xs font-extrabold"
+                  style={{ color: active ? PRIMARY : 'rgba(255,255,255,0.95)' }}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {chip.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      ) : challengeItems.length > 0 ? (
-        <View className="mt-5 gap-3">
-          {challengeItems.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              onPress={() => onChallengePress(item.id)}
-              activeOpacity={0.9}
-              style={{ backgroundColor: PRIMARY }}
-              className="overflow-hidden rounded-2xl px-5 py-4"
-            >
-              <Text className="text-lg font-bold text-white" numberOfLines={2}>
-                📸 {item.title}
-              </Text>
-              <Text className="mt-2 text-sm leading-5 text-white/90">챌린지에 참여해 보세요.</Text>
-              <View className="mt-3 flex-row items-center justify-between gap-3">
-                <View className="rounded-full bg-white/20 px-4 py-2">
-                  <Text className="text-sm font-bold text-white">참여하기</Text>
-                </View>
-                <Text className="text-sm font-semibold text-white/95">참여 {item.participantCount}명</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : null}
+      </View>
     </View>
   );
 }
@@ -207,6 +210,7 @@ function CommunityScreenInner() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounced(search, 350);
   const [channelKey, setChannelKey] = useState<CommunityFeedChannelKey>('daily');
+  const [sortKey, setSortKey] = useState<CommunityPostSort>('latest');
 
   const validFeedKeys = useMemo(
     () => new Set<string>(COMMUNITY_FEED_TABS.map((c) => c.key)),
@@ -230,7 +234,7 @@ function CommunityScreenInner() {
   }, [channelKey]);
 
   const infiniteQuery = useInfiniteQuery({
-    queryKey: ['community-posts', channelKey, channelDb, debouncedSearch],
+    queryKey: ['community-posts', channelKey, channelDb, debouncedSearch, sortKey],
     initialPageParam: 0,
     enabled: channelDb != null,
     queryFn: ({ pageParam }) =>
@@ -238,41 +242,20 @@ function CommunityScreenInner() {
         pageParam: pageParam as number,
         channel: channelDb,
         search: debouncedSearch,
+        sort: sortKey,
       }),
     getNextPageParam: getNextPostsPageParam,
   });
 
-  const openChallengesQuery = useQuery({
-    queryKey: ['open-challenges-with-counts'],
-    queryFn: fetchOpenChallengesWithCounts,
-    staleTime: 30_000,
-  });
-
   useFocusEffect(
     useCallback(() => {
-      void queryClient.invalidateQueries({ queryKey: ['open-challenges-with-counts'] });
       void queryClient.invalidateQueries({ queryKey: ['community-posts'] });
     }, [queryClient])
   );
 
-  const challengeItems = useMemo((): CommunityChallengeBannerItem[] => {
-    return (openChallengesQuery.data ?? []).map(({ challenge, participantCount }) => ({
-      id: challenge.id,
-      title: challenge.title,
-      participantCount,
-    }));
-  }, [openChallengesQuery.data]);
-
   const flat = useMemo(
     () => infiniteQuery.data?.pages.flatMap((p) => p) ?? [],
     [infiniteQuery.data]
-  );
-
-  const onChallengePress = useCallback(
-    (challengeId: string) => {
-      router.push({ pathname: '/challenge', params: { id: challengeId } });
-    },
-    [router]
   );
 
   const renderItem = useCallback(
@@ -280,7 +263,7 @@ function CommunityScreenInner() {
       const nick = truncateUserNickname(pickNickname(item));
       const { breed, avatar_url: avatar } = pickCat(item);
       const initial = nick.slice(0, 1) || '?';
-      const thumb = postThumbnailUrl(item);
+      const bannerUrl = postListingBannerUrl(item);
 
       return (
         <TouchableOpacity
@@ -288,9 +271,19 @@ function CommunityScreenInner() {
           activeOpacity={0.95}
           className="mb-4 overflow-hidden rounded-2xl border border-violet-100 bg-white"
         >
-        {thumb ? (
-          <Image source={{ uri: thumb }} className="h-[140px] w-full bg-violet-100" resizeMode="cover" />
-        ) : null}
+        {bannerUrl ? (
+          <Image source={{ uri: bannerUrl }} className="h-[140px] w-full bg-violet-100" resizeMode="cover" />
+        ) : (
+          <View className="h-[140px] w-full flex-col items-center justify-center gap-2 bg-violet-100 px-4">
+            <Image
+              source={require('../../assets/images/community-no-image.png')}
+              className="h-[72px] w-[72px]"
+              resizeMode="contain"
+              accessibilityLabel="이미지 없음"
+            />
+            <Text className="text-sm font-semibold text-violet-500">No Image</Text>
+          </View>
+        )}
         <View className="p-4">
           <View className="flex-row items-center gap-3">
             {avatar ? (
@@ -378,9 +371,8 @@ function CommunityScreenInner() {
       searchInputRef={searchInputRef}
       channelKey={channelKey}
       setChannelKey={setChannelKey}
-      challengeItems={challengeItems}
-      challengeLoading={openChallengesQuery.isPending}
-      onChallengePress={onChallengePress}
+      sortKey={sortKey}
+      setSortKey={setSortKey}
     />
   );
 
@@ -400,7 +392,6 @@ function CommunityScreenInner() {
           <RefreshControl
             refreshing={infiniteQuery.isRefetching && !infiniteQuery.isFetchingNextPage}
             onRefresh={() => {
-              void openChallengesQuery.refetch();
               void infiniteQuery.refetch();
             }}
           />

@@ -190,7 +190,7 @@ function PostDetailScreenInner() {
   const [commentDraft, setCommentDraft] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentDraft, setEditCommentDraft] = useState('');
-  const [zoomImageUri, setZoomImageUri] = useState<string | null>(null);
+  const [zoomGallery, setZoomGallery] = useState<{ urls: string[]; index: number } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const editCommentInputRef = useRef<TextInput>(null);
   const composerInputRef = useRef<TextInput>(null);
@@ -450,7 +450,7 @@ function PostDetailScreenInner() {
                   {galleryUrls.map((uri, i) => (
                     <TouchableOpacity
                       key={`${i}-${uri.slice(0, 48)}`}
-                      onPress={() => setZoomImageUri(uri)}
+                      onPress={() => setZoomGallery({ urls: galleryUrls, index: i })}
                       activeOpacity={0.9}
                       className="mb-2 mr-2 overflow-hidden rounded-xl"
                     >
@@ -693,7 +693,12 @@ function PostDetailScreenInner() {
               </View>
             </View>
           )}
-          <ImageZoomModal uri={zoomImageUri} onClose={() => setZoomImageUri(null)} />
+          <ImageZoomModal
+            visible={zoomGallery !== null}
+            onClose={() => setZoomGallery(null)}
+            images={zoomGallery?.urls ?? []}
+            initialIndex={zoomGallery?.index ?? 0}
+          />
         </View>
       )}
     </View>

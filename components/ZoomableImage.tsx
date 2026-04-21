@@ -13,24 +13,9 @@ import Animated, { clamp, useAnimatedStyle, useSharedValue, withTiming } from 'r
 
 const DEFAULT_MAX_SCALE = 5;
 
-/** 뷰포트(레이아웃) 기준: 확대 시 이동으로 빈 여백만 보이지 않도록 팬 상한 (transform origin = 중심 가정) */
-function clampPanWorklet(tx: number, ty: number, scale: number, w: number, h: number) {
-  'worklet';
-  if (w <= 0 || h <= 0) return { tx: 0, ty: 0 };
-  if (scale <= 1.001) return { tx: 0, ty: 0 };
-  const maxX = (w * (scale - 1)) / 2;
-  const maxY = (h * (scale - 1)) / 2;
-  return {
-    tx: clamp(tx, -maxX, maxX),
-    ty: clamp(ty, -maxY, maxY),
-  };
-}
-
 export type ZoomableImageProps = {
   uri: string;
-  /** 제스처·클리핑 영역 (고정 크기 또는 flex:1 등) */
   style?: StyleProp<ViewStyle>;
-  /** 내부 Image 스타일 (보통 width/height 100%) */
   imageStyle?: StyleProp<ImageStyle>;
   resizeMode?: 'contain' | 'cover';
   disabled?: boolean;
@@ -38,8 +23,7 @@ export type ZoomableImageProps = {
 };
 
 /**
- * 핀치 줌 + 확대 시 팬. 팬은 뷰포트 기준으로 클램프되어 그림 끝이 화면 밖으로 과도하게 나가지 않습니다.
- * 커뮤니티(모달), 앨범, 챌린지 등 공용.
+ * 핀치로 **레이아웃 크기**까지 키워 확대(클립만 되는 transform-only 한계 완화) + 팬.
  */
 export function ZoomableImage({
   uri,
@@ -50,7 +34,7 @@ export function ZoomableImage({
   maxScale = DEFAULT_MAX_SCALE,
 }: ZoomableImageProps) {
   const scale = useSharedValue(1);
-  const savedScale = useSharedValue(1);
+  const pinchStartScale = useSharedValue(1);
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const startTx = useSharedValue(0);
@@ -60,7 +44,6 @@ export function ZoomableImage({
 
   useEffect(() => {
     scale.value = 1;
-    savedScale.value = 1;
     tx.value = 0;
     ty.value = 0;
   }, [uri]);
@@ -69,9 +52,6 @@ export function ZoomableImage({
     const { width, height } = e.nativeEvent.layout;
     vw.value = width;
     vh.value = height;
-    const c = clampPanWorklet(tx.value, ty.value, scale.value, width, height);
-    tx.value = c.tx;
-    ty.value = c.ty;
   };
 
   if (Platform.OS === 'web') {
@@ -89,26 +69,16 @@ export function ZoomableImage({
   const pinch = Gesture.Pinch()
     .enabled(!disabled)
     .onStart(() => {
-      savedScale.value = scale.value;
+      pinchStartScale.value = scale.value;
     })
     .onUpdate((e) => {
-      const next = clamp(savedScale.value * e.scale, 1, maxScale);
-      scale.value = next;
-      const c = clampPanWorklet(tx.value, ty.value, next, vw.value, vh.value);
-      tx.value = c.tx;
-      ty.value = c.ty;
+      scale.value = clamp(pinchStartScale.value * e.scale, 1, maxScale);
     })
     .onEnd(() => {
       if (scale.value < 1.05) {
         scale.value = withTiming(1);
-        savedScale.value = 1;
         tx.value = withTiming(0);
         ty.value = withTiming(0);
-      } else {
-        savedScale.value = scale.value;
-        const c = clampPanWorklet(tx.value, ty.value, scale.value, vw.value, vh.value);
-        tx.value = c.tx;
-        ty.value = c.ty;
       }
     });
 
@@ -121,23 +91,42 @@ export function ZoomableImage({
     })
     .onUpdate((e) => {
       if (scale.value <= 1.02) return;
+      const bw = vw.value;
+      const bh = vh.value;
+      if (bw <= 0 || bh <= 0) return;
+      const w = bw * scale.value;
+      const h = bh * scale.value;
+      const maxTx = Math.max(0, (w - bw) / 2);
+      const maxTy = Math.max(0, (h - bh) / 2);
       const nx = startTx.value + e.translationX;
       const ny = startTy.value + e.translationY;
-      const c = clampPanWorklet(nx, ny, scale.value, vw.value, vh.value);
-      tx.value = c.tx;
-      ty.value = c.ty;
+      tx.value = clamp(nx, -maxTx, maxTx);
+      ty.value = clamp(ny, -maxTy, maxTy);
     });
 
   const composed = Gesture.Simultaneous(pinch, pan);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
-  }));
+  const animatedStyle = useAnimatedStyle(() => {
+    const s = Math.max(1, Math.min(scale.value, maxScale));
+    const bw = vw.value;
+    const bh = vh.value;
+    if (bw <= 0 || bh <= 0) {
+      return {};
+    }
+    const w = bw * s;
+    const h = bh * s;
+    return {
+      width: w,
+      height: h,
+      marginLeft: (bw - w) / 2 + tx.value,
+      marginTop: (bh - h) / 2 + ty.value,
+    };
+  });
 
   return (
     <GestureDetector gesture={composed}>
-      <View style={style} onLayout={onLayout} collapsable={false}>
-        <Animated.View style={[{ flex: 1, overflow: 'hidden' }, animatedStyle]}>
+      <View style={[style, { overflow: 'visible' }]} onLayout={onLayout} collapsable={false}>
+        <Animated.View style={[{ overflow: 'visible' }, animatedStyle]}>
           <Animated.Image
             source={{ uri }}
             style={[{ width: '100%', height: '100%' }, imageStyle]}

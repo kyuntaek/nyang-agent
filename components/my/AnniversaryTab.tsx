@@ -415,43 +415,46 @@ export function AnniversaryTab({ cat }: Props) {
 
         {!isPending && !isError && (
           <View className="mt-6">
-            {builtIns.map((b) => (
-              <Row
-                key={b.key}
-                variant="builtin"
-                title={b.title}
-                date={b.date}
-                repeatYearly={b.repeatYearly}
-              />
-            ))}
-
-            {rows.map((r) => (
-              <Row
-                key={r.id}
-                title={r.title}
-                date={r.date}
-                repeatYearly={r.repeat_yearly}
-                onDelete={() => void removeAnniversary(r)}
-              />
-            ))}
-
-            {builtIns.length === 0 && rows.length === 0 && (
-              <Text className="mt-6 text-center text-base text-violet-600">
-                등록된 기념일이 없어요. 아래에서 추가해 보세요.
-              </Text>
-            )}
-
             <TouchableOpacity
               onPress={openModal}
               style={{ backgroundColor: PRIMARY }}
-              className="mt-6 items-center rounded-2xl py-4 active:opacity-90"
+              className="items-center rounded-2xl py-4 active:opacity-90"
             >
               <Text className="text-base font-bold text-white">+ 기념일 추가</Text>
             </TouchableOpacity>
 
-            <Text className="mt-4 text-center text-xs leading-5 text-violet-400">
+            <Text className="mt-3 text-center text-xs leading-5 text-violet-400">
               예: &quot;다음 예방접종&quot; + 날짜를 넣으면 D-day로 보여 드려요.
             </Text>
+
+            {builtIns.length === 0 && rows.length === 0 && (
+              <Text className="mt-5 text-center text-base text-violet-600">
+                등록된 기념일이 없어요. 위에서 추가해 보세요.
+              </Text>
+            )}
+
+            {(builtIns.length > 0 || rows.length > 0) && (
+              <View className="mt-4">
+                {builtIns.map((b) => (
+                  <Row
+                    key={b.key}
+                    variant="builtin"
+                    title={b.title}
+                    date={b.date}
+                    repeatYearly={b.repeatYearly}
+                  />
+                ))}
+                {rows.map((r) => (
+                  <Row
+                    key={r.id}
+                    title={r.title}
+                    date={r.date}
+                    repeatYearly={r.repeat_yearly}
+                    onDelete={() => void removeAnniversary(r)}
+                  />
+                ))}
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
