@@ -1,6 +1,6 @@
 /**
  * Expo Push API 프록시.
- * 요청 본문: { push_token, title, body }
+ * 요청 본문: { push_token, title, body, deep_link_path? }
  * 헤더: x-internal-secret — Supabase Secrets `INTERNAL_PUSH_SECRET` 와 동일해야 함.
  */
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -28,7 +28,14 @@ Deno.serve(async (req) => {
 
   const expected = Deno.env.get("INTERNAL_PUSH_SECRET");
   const provided = req.headers.get("x-internal-secret");
-  if (!expected || provided !== expected) {
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearerToken = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+  const hasInternalSecret = Boolean(expected && provided === expected);
+  const hasServiceRoleBearer = Boolean(serviceRoleKey && bearerToken && bearerToken === serviceRoleKey);
+  if (!hasInternalSecret && !hasServiceRoleBearer) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
@@ -37,11 +44,13 @@ Deno.serve(async (req) => {
       push_token?: string;
       title?: string;
       body?: string;
+      deep_link_path?: string;
     };
 
     const to = payload.push_token?.trim();
     const title = payload.title?.trim() ?? "냥이 에이전트";
     const body = payload.body?.trim() ?? "";
+    const deepLinkPath = payload.deep_link_path?.trim();
 
     if (!to || !body) {
       return jsonResponse({ error: "push_token and body are required" }, 400);
@@ -60,6 +69,7 @@ Deno.serve(async (req) => {
         body,
         sound: "default",
         priority: "high",
+        data: deepLinkPath ? { path: deepLinkPath } : undefined,
       }),
     });
 

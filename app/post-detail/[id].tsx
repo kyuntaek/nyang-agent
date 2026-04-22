@@ -382,7 +382,9 @@ function PostDetailScreenInner() {
         </View>
       ) : !row ? (
         <View className="mx-4 mt-6 rounded-2xl border border-violet-100 bg-white px-4 py-6">
-          <Text className="text-center text-base text-violet-600">글을 찾을 수 없어요.</Text>
+          <Text className="text-center text-base text-violet-600">
+            글을 찾을 수 없어요. 관리자에 의해 비공개되었거나 삭제된 게시글일 수 있어요.
+          </Text>
         </View>
       ) : (
         <View className="flex-1">

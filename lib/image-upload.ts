@@ -34,13 +34,22 @@ export type ProcessedImageBuffers = {
   ext: 'jpg';
 };
 
+function mbText(bytes: number): string {
+  return `${Math.max(1, Math.round(bytes / 1024 / 1024))}`;
+}
+
 /**
  * 갤러리 선택 1건 → 본문용(리사이즈·압축) + 썸네일 바이트.
  * 원본이 10MB 초과면(메타 제공 시) 즉시 거절.
  */
-export async function processPickedImageForUpload(asset: ImagePickerAsset): Promise<ProcessedImageBuffers> {
-  if (asset.fileSize != null && asset.fileSize > MAX_IMAGE_UPLOAD_BYTES) {
-    throw new Error(`이미지는 ${MAX_IMAGE_UPLOAD_BYTES / 1024 / 1024}MB 이하만 올릴 수 있어요.`);
+export async function processPickedImageForUpload(
+  asset: ImagePickerAsset,
+  options?: { maxUploadBytes?: number }
+): Promise<ProcessedImageBuffers> {
+  const maxUploadBytes = options?.maxUploadBytes ?? MAX_IMAGE_UPLOAD_BYTES;
+
+  if (asset.fileSize != null && asset.fileSize > maxUploadBytes) {
+    throw new Error(`이미지는 ${mbText(maxUploadBytes)}MB 이하만 올릴 수 있어요.`);
   }
 
   const w = asset.width ?? 4096;
@@ -64,7 +73,7 @@ export async function processPickedImageForUpload(asset: ImagePickerAsset): Prom
 
   let compress = 0.78;
   let shrink = 0;
-  while (mainBody.byteLength > MAX_IMAGE_UPLOAD_BYTES && shrink < 8) {
+  while (mainBody.byteLength > maxUploadBytes && shrink < 8) {
     const dim = Math.max(720, FULL_MAX_DIMENSION - shrink * 220);
     const emergency: ImageManipulator.Action[] =
       w >= h ? [{ resize: { width: dim } }] : [{ resize: { height: dim } }];
@@ -77,7 +86,7 @@ export async function processPickedImageForUpload(asset: ImagePickerAsset): Prom
     shrink++;
   }
 
-  if (mainBody.byteLength > MAX_IMAGE_UPLOAD_BYTES) {
+  if (mainBody.byteLength > maxUploadBytes) {
     const last: ImageManipulator.Action[] =
       w >= h ? [{ resize: { width: 1024 } }] : [{ resize: { height: 1024 } }];
     full = await ImageManipulator.manipulateAsync(asset.uri, last, {
@@ -87,8 +96,8 @@ export async function processPickedImageForUpload(asset: ImagePickerAsset): Prom
     mainBody = await uriToArrayBuffer(full.uri);
   }
 
-  if (mainBody.byteLength > MAX_IMAGE_UPLOAD_BYTES) {
-    throw new Error(`압축 후에도 ${MAX_IMAGE_UPLOAD_BYTES / 1024 / 1024}MB를 넘어요. 다른 사진을 선택해 주세요.`);
+  if (mainBody.byteLength > maxUploadBytes) {
+    throw new Error(`압축 후에도 ${mbText(maxUploadBytes)}MB를 넘어요. 다른 사진을 선택해 주세요.`);
   }
 
   const tw = asset.width ?? 1;

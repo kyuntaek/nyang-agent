@@ -1,4 +1,5 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,6 +18,7 @@ import {
   getAgentTimeContext,
   resolveQuickParamToLabel,
 } from '../../lib/agent-time-context';
+import { fetchMobileAppSettings } from '../../lib/app-settings';
 import {
   useAgentChatHydrated,
   useAgentChatStore,
@@ -47,8 +49,13 @@ function openingMessageId(catId: string): string {
 }
 
 /** 첫 메시지 본문 — API 없이 코드에서만 (한국 시간대별 질문) */
-function openingMessageContent(catName: string): string {
-  return formatAgentQuestion(getAgentTimeContext(), catName);
+function openingMessageContent(
+  catName: string,
+  options?: { greeting?: string; templates?: Parameters<typeof getAgentTimeContext>[1] }
+): string {
+  const question = formatAgentQuestion(getAgentTimeContext(new Date(), options?.templates), catName);
+  const greeting = options?.greeting?.trim();
+  return greeting ? `${greeting} ${question}` : question;
 }
 
 /** LLM이 쓰는 대괄호·호환 문자 → ASCII (NFKC + 전각·【】·〈〉 등) */
@@ -232,14 +239,19 @@ function createAssistantMessageFromApi(content: string): ChatMessage {
   };
 }
 
-function buildOpeningMessage(catId: string, catName: string): ChatMessage {
-  const content = openingMessageContent(catName);
+function buildOpeningMessage(
+  catId: string,
+  catName: string,
+  options?: { greeting?: string; templates?: Parameters<typeof getAgentTimeContext>[1] }
+): ChatMessage {
+  const content = openingMessageContent(catName, options);
+  const ctx = getAgentTimeContext(new Date(), options?.templates);
   return {
     id: openingMessageId(catId),
     role: 'assistant',
     content,
     uiBody: content,
-    choiceLabels: [...getAgentTimeContext().chips],
+    choiceLabels: [...ctx.chips],
   };
 }
 
@@ -371,8 +383,13 @@ async function invokeAgentChat(
  * 저장 스레드 → 화면용 스레드.
  * 재진입 시 **마지막 말풍선이 에이전트(assistant)** 이면 새 인사말(첫 말풍선 시간대 갱신)을 넣지 않음.
  */
-function normalizeStoredThread(catId: string, catName: string, stored: ChatMessage[]): ChatMessage[] {
-  const opening = buildOpeningMessage(catId, catName);
+function normalizeStoredThread(
+  catId: string,
+  catName: string,
+  stored: ChatMessage[],
+  options?: { greeting?: string; templates?: Parameters<typeof getAgentTimeContext>[1] }
+): ChatMessage[] {
+  const opening = buildOpeningMessage(catId, catName, options);
   if (stored.length === 0) return [opening];
 
   const lastSig = lastNonDividerMessage(stored);
@@ -410,6 +427,27 @@ function AgentScreenInner() {
   const mmkvReady = useAgentChatHydrated();
   const catId = cat?.id;
   const storedThread = useAgentChatStore((s) => (catId ? s.byCatId[catId] : undefined));
+  const appSettingsQuery = useQuery({
+    queryKey: ['mobile-app-settings'],
+    queryFn: fetchMobileAppSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const agentTemplates = useMemo(
+    () => ({
+      morningQuestion: appSettingsQuery.data?.morningQuestion,
+      afternoonQuestion: appSettingsQuery.data?.afternoonQuestion,
+      eveningQuestion: appSettingsQuery.data?.eveningQuestion,
+      nightQuestion: appSettingsQuery.data?.nightQuestion,
+    }),
+    [
+      appSettingsQuery.data?.afternoonQuestion,
+      appSettingsQuery.data?.eveningQuestion,
+      appSettingsQuery.data?.morningQuestion,
+      appSettingsQuery.data?.nightQuestion,
+    ]
+  );
+  const agentGreeting = appSettingsQuery.data?.agentGreeting ?? '';
+  const agentDisplayName = appSettingsQuery.data?.agentName?.trim() || '에이전트';
 
   useEffect(() => {
     if (__DEV__) {
@@ -430,14 +468,14 @@ function AgentScreenInner() {
   const messages: ChatMessage[] = useMemo(() => {
     if (!cat || catLoading) return [];
     const raw = storedThread ?? [];
-    return normalizeStoredThread(cat.id, cat.name ?? '', raw);
-  }, [cat, catLoading, storedThread]);
+    return normalizeStoredThread(cat.id, cat.name ?? '', raw, { greeting: agentGreeting, templates: agentTemplates });
+  }, [agentGreeting, agentTemplates, cat, catLoading, storedThread]);
 
   const visibleMessages: ChatMessage[] = useMemo(() => {
     if (!cat || catLoading) return [];
     if (messages.length > 0) return messages;
-    return [buildOpeningMessage(cat.id, cat.name ?? '')];
-  }, [cat, catLoading, messages]);
+    return [buildOpeningMessage(cat.id, cat.name ?? '', { greeting: agentGreeting, templates: agentTemplates })];
+  }, [agentGreeting, agentTemplates, cat, catLoading, messages]);
 
   const messagesRef = useRef<ChatMessage[]>([]);
   useEffect(() => {
@@ -488,19 +526,21 @@ function AgentScreenInner() {
       if (!useAgentChatStore.persist.hasHydrated()) return;
       const row = useAgentChatStore.getState().byCatId[catId];
       if (row != null && row.length > 0) return;
-      useAgentChatStore.getState().setByCatId(catId, [buildOpeningMessage(catId, cat?.name ?? '')]);
+      useAgentChatStore
+        .getState()
+        .setByCatId(catId, [buildOpeningMessage(catId, cat?.name ?? '', { greeting: agentGreeting, templates: agentTemplates })]);
     }, 400);
     return () => clearTimeout(t);
-  }, [catId, cat?.name, mmkvReady, catLoading]);
+  }, [agentGreeting, agentTemplates, catId, cat?.name, mmkvReady, catLoading]);
 
   /** 홈에서 quick만 전달 — 입력창에만 넣고, 전송 시에만 API (`q0`~`q2` 또는 레거시 ate_well 등) */
   useEffect(() => {
     if (!cat || !quickParam) return;
-    const label = resolveQuickParamToLabel(quickParam, getAgentTimeContext());
+    const label = resolveQuickParamToLabel(quickParam, getAgentTimeContext(new Date(), agentTemplates));
     if (!label) return;
     setInput(label);
     router.setParams({ quick: undefined });
-  }, [cat?.id, quickParam, router]);
+  }, [agentTemplates, cat?.id, quickParam, router]);
 
   /** 재진입: MMKV 복원이 늦어도 잡히도록 짧게 재시도 후 API (탭 포커스마다) */
   const runReEntryAssistant = useCallback(
@@ -565,7 +605,7 @@ function AgentScreenInner() {
     const catId = cat?.id;
     if (!catId || !cat) return;
 
-    const openingMsg = buildOpeningMessage(catId, cat.name ?? '');
+    const openingMsg = buildOpeningMessage(catId, cat.name ?? '', { greeting: agentGreeting, templates: agentTemplates });
     const prev = messagesRef.current;
     const withOpening: ChatMessage[] =
       prev.length === 0
@@ -596,7 +636,7 @@ function AgentScreenInner() {
     } finally {
       setSending(false);
     }
-  }, [cat, sending]);
+  }, [agentGreeting, agentTemplates, cat, sending]);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -619,8 +659,8 @@ function AgentScreenInner() {
       const { chips } = parseAssistantMessageForUI(m.uiBody ?? m.content);
       if (chips.length > 0) return chips;
     }
-    return [...getAgentTimeContext().chips];
-  }, [visibleMessages]);
+    return [...getAgentTimeContext(new Date(), agentTemplates).chips];
+  }, [agentTemplates, visibleMessages]);
 
   /** 대화기록삭제: 저장 스레드에서 가장 최근 2개 말풍선만 남김 */
   const onTrimAgentHistory = useCallback(() => {
@@ -633,7 +673,7 @@ function AgentScreenInner() {
       <View className="flex-1" style={{ flex: 1, minHeight: 0, paddingTop: communityScreenPaddingTop(insets.top) }}>
         <View className="px-4 pb-2">
           <TabScreenHeaderRow
-            title="에이전트"
+            title={agentDisplayName}
             right={
               catId ? (
                 <TouchableOpacity

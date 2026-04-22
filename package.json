@@ -7,7 +7,12 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "postinstall": "node scripts/patch-css-interop.cjs"
+    "postinstall": "node scripts/patch-css-interop.cjs",
+    "supabase:login": "npx supabase@latest login",
+    "supabase:status": "npx supabase@latest status",
+    "supabase:link": "npx supabase@latest link --project-ref itlvdwxxdnckkixkopij",
+    "supabase:push": "npx supabase@latest db push",
+    "supabase:pull": "npx supabase@latest db pull"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

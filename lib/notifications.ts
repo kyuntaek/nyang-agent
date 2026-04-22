@@ -99,6 +99,25 @@ export async function registerForPushNotifications(): Promise<string | null> {
   return token;
 }
 
+function normalizeRoutePath(inputPath: string): string | null {
+  const path = inputPath.trim().toLowerCase();
+  if (!path) return null;
+
+  const normalized = path.startsWith('/') ? path : `/${path.replace(/^\/+/, '')}`;
+
+  const aliasMap: Record<string, string> = {
+    '/': '/',
+    '/home': '/',
+    '/index': '/',
+    '/agent': '/agent',
+    '/community': '/community',
+    '/challenge': '/challenge',
+    '/challenges': '/challenge',
+  };
+
+  return aliasMap[normalized] ?? normalized;
+}
+
 function readRoutePathFromNotificationData(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null;
   const record = data as Record<string, unknown>;
@@ -106,11 +125,14 @@ function readRoutePathFromNotificationData(data: unknown): string | null {
   const rawPath = record.path ?? record.href ?? record.url ?? record.screen;
   if (typeof rawPath !== 'string') return null;
 
-  const path = rawPath.trim();
-  if (!path) return null;
+  return normalizeRoutePath(rawPath);
+}
 
-  if (path.startsWith('/')) return path;
-  return `/${path.replace(/^\/+/, '')}`;
+export async function getInitialNotificationPath(): Promise<string | null> {
+  const response = await Notifications.getLastNotificationResponseAsync();
+  if (!response) return null;
+  const data = response.notification.request.content.data;
+  return readRoutePathFromNotificationData(data);
 }
 
 /**
@@ -133,6 +155,9 @@ export function attachNotificationListeners(onNavigate: (path: string) => void):
         console.log('[push] notification click without route data', data);
       }
       return;
+    }
+    if (__DEV__) {
+      console.log('[push] notification navigate to', path, data);
     }
     onNavigate(path);
   });

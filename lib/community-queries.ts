@@ -60,6 +60,7 @@ export type PostRow = {
   id: string;
   user_id: string;
   cat_id: string | null;
+  is_visible?: boolean;
   channel: PostChannelDb;
   body: string;
   agent_summary: string | null;
@@ -74,6 +75,7 @@ export type PostFeedRow = {
   id: string;
   user_id: string;
   cat_id: string | null;
+  is_visible?: boolean;
   channel: PostChannelDb;
   body: string;
   agent_summary: string | null;
@@ -133,6 +135,7 @@ function mapCommunityPostsRpcToFeedRows(rows: CommunityPostsRpcRow[] | null): Po
     id: r.id,
     user_id: r.user_id,
     cat_id: r.cat_id,
+    is_visible: true,
     channel: r.channel as PostChannelDb,
     body: r.body,
     agent_summary: r.agent_summary,
@@ -197,6 +200,7 @@ const POST_FEED_SELECT = `
       id,
       user_id,
       cat_id,
+      is_visible,
       channel,
       body,
       agent_summary,
@@ -353,6 +357,7 @@ export async function fetchPostById(id: string): Promise<PostFeedRow | null> {
     .from('posts')
     .select(POST_FEED_SELECT)
     .eq('id', id)
+    .eq('is_visible', true)
     .maybeSingle();
 
   if (error) throw error;
@@ -421,6 +426,7 @@ export async function fetchPostsPage(params: {
   }
 
   let q = supabase.from('posts').select(POST_FEED_SELECT);
+  q = q.eq('is_visible', true);
   if (sort === 'likes') {
     q = q.order('like_count', { ascending: false }).order('created_at', { ascending: false });
   } else if (sort === 'comments') {
@@ -476,6 +482,7 @@ export async function fetchMyPostsPage(params: {
   let q = supabase
     .from('posts')
     .select(POST_FEED_SELECT)
+    .eq('is_visible', true)
     .eq('user_id', uid)
     .order('created_at', { ascending: false })
     .range(from, to);
@@ -503,6 +510,7 @@ export async function fetchMyPostsRecent(limit = 12): Promise<PostFeedRow[]> {
   const { data, error } = await supabase
     .from('posts')
     .select(POST_FEED_SELECT)
+    .eq('is_visible', true)
     .eq('user_id', userData.user.id)
     .order('created_at', { ascending: false })
     .limit(limit);

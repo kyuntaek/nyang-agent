@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
   Linking,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,6 +34,7 @@ import { fetchLatestCat } from '../../lib/fetch-latest-cat';
 import { pickSoonestAnniversaryHighlight } from '../../lib/home-anniversary';
 import { getAgentScreenVisited } from '../../lib/agent-home-ui-flag';
 import { formatAgentQuestion, getAgentTimeContext } from '../../lib/agent-time-context';
+import { fetchMobileAppSettings } from '../../lib/app-settings';
 import { LEGAL_LINKS } from '../../lib/legal-urls';
 import { waGwa } from '../../lib/korean-particle';
 import { getNyanBtiArchetype } from '../../lib/nyan-bti-archetypes';
@@ -42,6 +45,16 @@ import {
 } from '../../lib/community-tab-styles';
 
 const PRIMARY = '#7F77DD';
+const NOTICE_DISMISS_KEY = 'home_notice_dismiss_until';
+
+function kstYmd(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
 
 /** 홈 피드 카드: Pressable 은 NativeWind interop에서 navigation 오류가 나 TouchableOpacity 사용 */
 const homePostCardStyles = StyleSheet.create({
@@ -338,6 +351,14 @@ export default function HomeScreen() {
   const queryClient = useQueryClient();
   const [communityTab, setCommunityTab] = useState<CommunityTab>('hot');
   const [showHomeAgentChips, setShowHomeAgentChips] = useState(() => !getAgentScreenVisited());
+  const [noticeModalOpen, setNoticeModalOpen] = useState(false);
+  const [hideNoticeToday, setHideNoticeToday] = useState(false);
+  const shownNoticeRef = useRef('');
+  const appSettingsQuery = useQuery({
+    queryKey: ['mobile-app-settings'],
+    queryFn: fetchMobileAppSettings,
+    staleTime: 5 * 60 * 1000,
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -454,7 +475,42 @@ export default function HomeScreen() {
 
   const scrollBottomPadding = Math.max(insets.bottom, 16) + 28;
 
-  const agentTimeCtx = getAgentTimeContext();
+  const agentTimeCtx = getAgentTimeContext(new Date(), {
+    morningQuestion: appSettingsQuery.data?.morningQuestion,
+    afternoonQuestion: appSettingsQuery.data?.afternoonQuestion,
+    eveningQuestion: appSettingsQuery.data?.eveningQuestion,
+    nightQuestion: appSettingsQuery.data?.nightQuestion,
+  });
+  const agentDisplayName = appSettingsQuery.data?.agentName?.trim() || '냥에이전트';
+  const noticeBannerText = appSettingsQuery.data?.noticeBanner?.trim() || '';
+
+  useEffect(() => {
+    if (!noticeBannerText) return;
+    if (shownNoticeRef.current === noticeBannerText) return;
+    void (async () => {
+      try {
+        const dismissed = await AsyncStorage.getItem(NOTICE_DISMISS_KEY);
+        const today = kstYmd();
+        if (dismissed === today) return;
+      } catch {
+        // storage read 실패해도 공지는 보여준다.
+      }
+      shownNoticeRef.current = noticeBannerText;
+      setHideNoticeToday(false);
+      setNoticeModalOpen(true);
+    })();
+  }, [noticeBannerText]);
+
+  const closeNoticeModal = useCallback(async () => {
+    if (hideNoticeToday) {
+      try {
+        await AsyncStorage.setItem(NOTICE_DISMISS_KEY, kstYmd());
+      } catch {
+        // 저장 실패해도 닫기 동작은 유지
+      }
+    }
+    setNoticeModalOpen(false);
+  }, [hideNoticeToday]);
 
   return (
     <View
@@ -692,9 +748,9 @@ export default function HomeScreen() {
                   className="mt-4"
                   style={homeScreenPressStyles.agentChatCta}
                   accessibilityRole="button"
-                  accessibilityLabel="냥에이전트와 대화"
+                  accessibilityLabel={`${agentDisplayName}와 대화`}
                 >
-                  <Text style={homeScreenPressStyles.agentChatCtaText}>냥에이전트와 대화</Text>
+                  <Text style={homeScreenPressStyles.agentChatCtaText}>{agentDisplayName}와 대화</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -888,6 +944,41 @@ export default function HomeScreen() {
       </ScrollView>
 
       <StatusBar style="dark" />
+
+      <Modal visible={noticeModalOpen} transparent animationType="fade" onRequestClose={() => void closeNoticeModal()}>
+        <View className="flex-1 items-center justify-center bg-black/40 px-6">
+          <View className="w-full max-w-md rounded-2xl bg-white p-5">
+            <Text className="text-lg font-bold text-violet-950">공지사항</Text>
+            <Text className="mt-3 text-sm leading-6 text-violet-800">{noticeBannerText}</Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setHideNoticeToday((prev) => !prev)}
+              className="mt-4 flex-row items-center gap-2"
+            >
+              <View
+                className="h-5 w-5 items-center justify-center rounded border"
+                style={{
+                  borderColor: hideNoticeToday ? PRIMARY : '#c4b5fd',
+                  backgroundColor: hideNoticeToday ? PRIMARY : '#fff',
+                }}
+              >
+                {hideNoticeToday ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+              </View>
+              <Text className="text-sm text-violet-700">오늘 하루 보지 않기</Text>
+            </TouchableOpacity>
+            <View className="mt-5 items-end">
+              <TouchableOpacity
+                onPress={() => void closeNoticeModal()}
+                activeOpacity={0.85}
+                className="rounded-xl px-4 py-2"
+                style={{ backgroundColor: PRIMARY }}
+              >
+                <Text className="font-semibold text-white">닫기</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

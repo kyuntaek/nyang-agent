@@ -34,6 +34,7 @@ import {
   fetchChallengeEntryForUser,
   type ChallengeEntryRow,
 } from '../../lib/challenge-queries';
+import { fetchMobileAppSettings } from '../../lib/app-settings';
 import { truncateCatName, truncateUserNickname } from '../../lib/display-strings';
 import { getNyanBtiArchetype } from '../../lib/nyan-bti-archetypes';
 import { supabase } from '../../lib/supabase';
@@ -157,6 +158,13 @@ export default function ChallengeScreen() {
   const myEntry = myEntryQuery.data ?? null;
 
   const entries = entriesQuery.data ?? [];
+  const appSettingsQuery = useQuery({
+    queryKey: ['mobile-app-settings'],
+    queryFn: fetchMobileAppSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const challengeMaxSizeMb = appSettingsQuery.data?.challengeMaxSizeMb ?? 10;
+  const challengeMaxPhotos = appSettingsQuery.data?.challengeMaxPhotos ?? 1;
 
   /** 목록에 이미 내 행이 있으면 my-entry 쿼리보다 먼저 쓸 수 있음 → 수정 폼 캡션/삭제 일치 */
   const myEntryResolved = useMemo(() => {
@@ -358,14 +366,15 @@ export default function ChallengeScreen() {
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     try {
-      const processed = await processPickedImageForUpload(asset);
+      const maxUploadBytes = challengeMaxSizeMb * 1024 * 1024;
+      const processed = await processPickedImageForUpload(asset, { maxUploadBytes });
       setPickedProcessed(processed);
       setPickedUri(asset.uri);
       setImageDirty(true);
     } catch (e) {
       Alert.alert('이미지', e instanceof Error ? e.message : '이미지를 처리하지 못했어요.');
     }
-  }, []);
+  }, [challengeMaxSizeMb]);
 
   const openCreateModal = useCallback(() => {
     if (!uid) {
@@ -602,6 +611,9 @@ export default function ChallengeScreen() {
               {modalMode === 'edit'
                 ? '사진과 한마디를 바꿀 수 있어요.'
                 : '사진과 한마디를 남겨 주세요.'}
+            </Text>
+            <Text className="mt-1 text-xs text-violet-500">
+              최대 {Math.max(1, challengeMaxPhotos)}장 / 사진 {Math.max(1, challengeMaxSizeMb)}MB
             </Text>
 
             <TouchableOpacity

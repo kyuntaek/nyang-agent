@@ -38,7 +38,8 @@
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "package": "com.kyuntaek.nyangagent"
     },
     "web": {
       "favicon": "./assets/favicon.png"

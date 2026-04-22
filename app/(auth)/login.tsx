@@ -31,6 +31,27 @@ function firstParam(v: string | string[] | undefined): string {
   return Array.isArray(v) ? (v[0] ?? '') : v;
 }
 
+async function touchProfileActivity() {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user?.id) return;
+
+  const { error } = await supabase.from('profiles').upsert(
+    {
+      id: user.id,
+      email: user.email ?? null,
+      last_activity_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' }
+  );
+
+  if (error && __DEV__) {
+    console.warn('[login touchProfileActivity]', error.message);
+  }
+}
+
 function LoginScreenInner() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -114,6 +135,7 @@ function LoginScreenInner() {
         return;
       }
 
+      await touchProfileActivity();
       router.replace('/');
     } catch (e) {
       Alert.alert('카카오 로그인', e instanceof Error ? e.message : '알 수 없는 오류예요.');
@@ -143,6 +165,7 @@ function LoginScreenInner() {
         Alert.alert('로그인 실패', error.message);
         return;
       }
+      await touchProfileActivity();
       router.replace('/');
     } finally {
       setBusyLogin(false);
@@ -178,6 +201,7 @@ function LoginScreenInner() {
         return;
       }
       if (data.session) {
+        await touchProfileActivity();
         router.replace('/');
         return;
       }
